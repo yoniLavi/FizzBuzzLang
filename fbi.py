@@ -24,18 +24,59 @@ class FBSyntaxError(SyntaxError):
         super().__init__(error, (filename, linenum, colnum, line))
 
 
+class VM:
+    """A FizzBuzzLang virtual machine
+
+    This VM supports 3 types (modes) of operations:
+    - Data-space manipulation (methods statring with ds_)
+    - I/O (methods statring with io_)
+    - Flow control (methods statring with fc_)
+    """
+
+    def __init__(self, *, debug=False):
+        self.stack = [0]  # Memory stack
+        self.sp = 0  # Data-space pointer
+        # TODO: replace stored_sp1 and stored_sp2 with a fixed-length list
+        self.stored_sp1 = 0  # Stored location 1
+        self.stored_sp2 = 0  # Stored location 2
+        self.ip = 0  # Instruction pointer
+        self.labels = {}  # Location labels
+        self.debug = debug  # Debug mode enabled?
+
+    def ds_pointer_forward(self):
+        """Move the pointer one step forwards in the data-space
+
+        Extend the stack as needed, padding it with zeros.
+        """
+        self.sp += 1
+        if self.sp == len(self.stack):
+            self.stack.append(0)
+
+    def ds_pointer_backward(self):
+        """Move the pointer one step backwards in the data-space
+
+        If already at the start, stay in place.
+        """
+        self.sp = max(self.sp - 1, 0)
+
+    def ds_duplicate_data_item(self):
+        """Duplicate the pointed to stack element and move pointer forward
+
+        If pointing to the top of the stack, it will be extended.
+        Otherwise, the next item will be overwritten.
+
+        TODO: Address the fact that this op is currently undocumented
+        """
+        self.ds_pointer_forward()
+        self.stack[self.sp] = self.stack[self.sp-1]
+
+
 class FizzBuzzLang:
     """
     The main class. All methods are private except for run_file
     """
     def __init__(self, *, debug=False):
-        self.stack = [0]
-        self.sp = 0
-        self.stored_sp1 = 0
-        self.stored_sp2 = 0
-        self.ip = 0
-        self.labels = {}
-        self.debug = debug
+        self.vm = VM(debug=debug)
 
     def _parse_tokens(self, line, file, linenum):
         """Parse a single line into tokens
@@ -68,75 +109,70 @@ class FizzBuzzLang:
         """
         if submode == 1:
             if args[0] == "FIZZ":
-                self.sp += 1
-                if len(self.stack) == self.sp:
-                    self.stack.append(0)
+                self.vm.ds_pointer_forward()
             elif args[0] == "BUZZ":
-                self.sp = max(self.sp - 1, 0)
+                self.vm.ds_pointer_backward()
             elif args[0] == "FIZZBUZZ":
-                self.sp += 1
-                if len(self.stack) == self.sp:
-                    self.stack.append(self.stack[self.sp-1])
-                else:
-                    self.stack[self.sp] = self.stack[self.sp-1]
+                self.vm.ds_duplicate_data_item()
 
         elif submode == 2:
             locargs = len(args) > 1
             if locargs:
                 if args[1] == "FIZZ":
-                    stored_loc = self.stored_sp1
+                    stored_loc = self.vm.stored_sp1
                 else:
-                    stored_loc = self.stored_sp2
+                    stored_loc = self.vm.stored_sp2
+
             if args[0] == "FIZZ":
                 if locargs:
-                    self.stack[self.sp] += self.stack[stored_loc]
+                    self.vm.stack[self.vm.sp] += self.vm.stack[stored_loc]
                 else:
-                    self.stack[self.sp] += 1
+                    self.vm.stack[self.vm.sp] += 1
             elif args[0] == "BUZZ":
                 if locargs:
-                    self.stack[self.sp] -= self.stack[stored_loc]
+                    self.vm.stack[self.vm.sp] -= self.vm.stack[stored_loc]
                 else:
-                    self.stack[self.sp] -= 1
+                    self.vm.stack[self.vm.sp] -= 1
             elif args[0] == "FIZZBUZZ":
-                if self.sp + 1 == len(self.stack):
-                    self.stack.append(0)
+                if self.vm.sp + 1 == len(self.vm.stack):
+                    self.vm.stack.append(0)
                 if locargs:
-                    divisor = self.stack[stored_loc]
+                    divisor = self.vm.stack[stored_loc]
                 else:
-                    divisor = self.stack[self.sp - 1]
-                self.stack[self.sp + 1] = self.stack[self.sp] % divisor
-                self.sp += 1
+                    divisor = self.vm.stack[self.vm.sp - 1]
+                self.vm.stack[self.vm.sp + 1] = self.vm.stack[self.vm.sp] % divisor
+                self.vm.sp += 1
 
         elif submode == 3:
             if args[0] == "FIZZ":
-                self.stored_sp1 = self.sp
+                self.vm.stored_sp1 = self.vm.sp
             elif args[0] == "BUZZ":
-                self.stored_sp2 = self.sp
+                self.vm.stored_sp2 = self.vm.sp
             elif args[0] == "FIZZBUZZ":
                 if args[1] == "FIZZ":
-                    self.sp = self.stored_sp1
+                    self.vm.sp = self.vm.stored_sp1
                 else:
-                    self.sp = self.stored_sp2
+                    self.vm.sp = self.vm.stored_sp2
 
     def _op_io(self, submode, args):
         """Execute an Input/Output operation
         """
-        stored_loc = self.sp
+        stored_loc = self.vm.sp
         locargs = len(args) > 1
         if locargs:
             if args[1] == "FIZZ":
-                stored_loc = self.stored_sp1
+                stored_loc = self.vm.stored_sp1
             else:
-                stored_loc = self.stored_sp2
+                stored_loc = self.vm.stored_sp2
         if submode == 1:
-            print(self.stack[stored_loc])
+            print(self.vm.stack[stored_loc])
         elif submode == 2:
-            print(chr(self.stack[stored_loc]), end="")
+            print(chr(self.vm.stack[stored_loc]), end="")
         elif submode == 3:
             if locargs and args[0] == "FIZZBUZZ":
                 varnum = "".join("0" if fb == "FIZZ" else "1"
                                  for fb in args[1:])
-                self.stack[self.sp] = int(varnum, 2)
+                self.vm.stack[self.vm.sp] = int(varnum, 2)
             else:
                 user_input = input("> ")
                 try:
@@ -148,27 +184,27 @@ class FizzBuzzLang:
                     except ValueError:
                         val = str(user_input)
                         val = ord(val) if len(user_input) == 1 else 0
-                self.stack[self.sp] = val
-                
+                self.vm.stack[self.vm.sp] = val
+
     def _op_flow(self, submode, args):
         """Execute a Flow Control operation
         """
         if submode == 1:
-            if args[0] not in self.labels:
-                self.labels[args[0]] = self.ip
-            self.ip += 1
+            if args[0] not in self.vm.labels:
+                self.vm.labels[args[0]] = self.vm.ip
+            self.vm.ip += 1
         elif submode == 2:
-            if args[1] not in self.labels:
+            if args[1] not in self.vm.labels:
                 print("Error: label does not exist!")
                 return
 
-            jump = (args[0] == "FIZZ" and self.stack[self.sp] != 0 or
-                    args[0] == "BUZZ" and self.stack[self.sp] == 0 or
+            jump = (args[0] == "FIZZ" and self.vm.stack[self.vm.sp] != 0 or
+                    args[0] == "BUZZ" and self.vm.stack[self.vm.sp] == 0 or
                     args[0] == "FIZZBUZZ")
             if jump:
-                self.ip = self.labels[args[1]]
+                self.vm.ip = self.vm.labels[args[1]]
             else:
-                self.ip += 1
+                self.vm.ip += 1
 
         if submode == 3:
             return 0
@@ -181,26 +217,26 @@ class FizzBuzzLang:
             code = prog.readlines()
 
         while True:
-            if self.ip == len(code):
+            if self.vm.ip == len(code):
                 print("Error: Expected statement")
                 break
 
             mode, submode, args = self._parse_tokens(
-                code[self.ip], filename, self.ip)
+                code[self.vm.ip], filename, self.vm.ip)
             if mode == 1:
                 self._op_stack(submode, args)
-                self.ip += 1
+                self.vm.ip += 1
             elif mode == 2:
                 self._op_io(submode, args)
-                self.ip += 1
+                self.vm.ip += 1
             elif mode == 3:
                 bv = self._op_flow(submode, args)
                 if bv == 0:
                     break
             else:
-                self.ip += 1
+                self.vm.ip += 1
 
-            if self.debug:
-                print(self.labels, self.stored_sp1, self.stored_sp2)
+            if self.vm.debug:
+                print(self.vm.labels, self.vm.stored_sp1, self.vm.stored_sp2)
                 print(mode, submode, args)
-                print(self.stack, self.sp, self.ip)
+                print(self.vm.stack, self.vm.sp, self.vm.ip)
