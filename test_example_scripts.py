@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from fbi import FizzBuzzLang, FBSyntaxError
+from fbi import Interpreter, FBSyntaxError
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXAMPLES_DIR = "example_scripts"
@@ -29,7 +29,7 @@ class TestOutput(unittest.TestCase):
     def test_valid_scripts(self):
         for script, expected in VALID_SCRIPTS.items():
             with patch('sys.stdout', new=io.StringIO()) as output:
-                fbl = FizzBuzzLang()
+                fbl = Interpreter()
                 fbl.run_file(path_to_script(script))
                 self.assertEqual(output.getvalue(), expected,
                                  f"Unexpected output from script {script}")
@@ -37,7 +37,7 @@ class TestOutput(unittest.TestCase):
     def test_invalid_scripts(self):
         for script in INVALID_SCRIPTS:
             with self.assertRaises(FBSyntaxError):
-                fbl = FizzBuzzLang()
+                fbl = Interpreter()
                 fbl.run_file(path_to_script(script))
 
 

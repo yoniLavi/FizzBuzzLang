@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 import sys
 
-from fbi import FizzBuzzLang
+from fbi import Interpreter
 
 
 def run(script, debug=False):
-    fbl = FizzBuzzLang(debug=debug)
+    fbl = Interpreter(debug=debug)
     fbl.run_file(script)
 
 

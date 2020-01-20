@@ -24,8 +24,12 @@ class FBSyntaxError(SyntaxError):
         super().__init__(error, (filename, linenum, colnum, line))
 
 
+class FBRuntimeError(RuntimeError):
+    pass
+
+
 class VM:
-    """A FizzBuzzLang virtual machine
+    """A FizzBuzzLang virtual machine to be used by the Interpreter
 
     This VM supports 3 types (modes) of operations:
     - Data-space manipulation (methods statring with ds_)
@@ -40,7 +44,7 @@ class VM:
         self.stored_sp1 = 0  # Stored location 1
         self.stored_sp2 = 0  # Stored location 2
         self.ip = 0  # Instruction pointer
-        self.labels = {}  # Location labels
+        self.labels = {}  # Instruction pointer labels
         self.debug = debug  # Debug mode enabled?
 
     def ds_pointer_forward(self):
@@ -80,7 +84,7 @@ class VM:
         addend = [1,
                   self.stack[self.stored_sp1],
                   self.stack[self.stored_sp2],
-        ][stored_location_id]
+                  ][stored_location_id]
         self.stack[self.sp] += addend
 
     def ds_subtract(self, stored_location_id=0):
@@ -93,7 +97,7 @@ class VM:
         subtrahend = [1,
                       self.stack[self.stored_sp1],
                       self.stack[self.stored_sp2],
-        ][stored_location_id]
+                      ][stored_location_id]
         self.stack[self.sp] -= subtrahend
 
     def ds_modulus(self, stored_location_id=0):
@@ -110,7 +114,7 @@ class VM:
         divisor = [self.stack[self.sp - 2],
                    self.stack[self.stored_sp1],
                    self.stack[self.stored_sp2],
-        ][stored_location_id]
+                   ][stored_location_id]
         self.stack[self.sp] = self.stack[self.sp - 1] % divisor
 
     def ds_store(self, stored_location_id):
@@ -121,8 +125,8 @@ class VM:
         elif stored_location_id == 2:
             self.stored_sp2 = self.sp
 
-    def ds_jump_to(self, stored_location_id):
-        """Move pointer position to the value in one of the stored locations
+    def ds_move_to(self, stored_location_id):
+        """Move data-space pointer to the value in one of the stored locations
         """
         if stored_location_id == 1:
             self.sp = self.stored_sp1
@@ -135,7 +139,7 @@ class VM:
         value = [self.stack[self.sp],
                  self.stack[self.stored_sp1],
                  self.stack[self.stored_sp2],
-        ][stored_location_id]
+                 ][stored_location_id]
         print(value)
 
     def io_print_character(self, stored_location_id=0):
@@ -144,7 +148,7 @@ class VM:
         value = [self.stack[self.sp],
                  self.stack[self.stored_sp1],
                  self.stack[self.stored_sp2],
-        ][stored_location_id]
+                 ][stored_location_id]
         print(chr(value), end="")
 
     def io_character_input(self):
@@ -175,11 +179,44 @@ class VM:
         """
         self.stack[self.sp] = int(binary_input, 2)
 
+    def fc_create_label(self, label):
+        """Create a label at the current instruction
 
-class FizzBuzzLang:
+        An attempt to override an existing label will be ignored
+        """
+        if label not in self.labels:
+            self.labels[label] = self.ip
+        self.ip += 1
+
+    def fc_jump(self, label):
+        """Jump to the label unconditionally
+        """
+        if label not in self.labels:
+            raise FBRuntimeError(f"Jump attempt to undefined label '{label}'")
+        self.ip = self.labels[label]
+
+    def fc_jump_if_zero(self, label):
+        """Jump to the label if the current location value is zero
+        """
+        if self.stack[self.sp] == 0:
+            self.fc_jump(label)
+        else:
+            self.ip += 1
+
+    def fc_jump_if_non_zero(self, label):
+        """Jump to the label if the current location value is NOT zero
+        """
+        if self.stack[self.sp] != 0:
+            self.fc_jump(label)
+        else:
+            self.ip += 1
+
+
+class Interpreter:
     """
-    The main class. All methods are private except for run_file
+    The main iterpreter class. All methods are private except for run_file
     """
+
     def __init__(self, *, debug=False):
         self.vm = VM(debug=debug)
 
@@ -250,9 +287,9 @@ class FizzBuzzLang:
                 self.vm.ds_store(stored_location_id=2)
             elif args[0] == "FIZZBUZZ":
                 if args[1] == "FIZZ":
-                    self.vm.ds_jump_to(stored_location_id=1)
+                    self.vm.ds_move_to(stored_location_id=1)
                 else:
-                    self.vm.ds_jump_to(stored_location_id=2)
+                    self.vm.ds_move_to(stored_location_id=2)
 
     def _op_io(self, submode, args):
         """Execute an Input/Output operation
@@ -281,26 +318,18 @@ class FizzBuzzLang:
             else:
                 self.vm.io_character_input()
 
-
     def _op_flow(self, submode, args):
         """Execute a Flow Control operation
         """
         if submode == 1:
-            if args[0] not in self.vm.labels:
-                self.vm.labels[args[0]] = self.vm.ip
-            self.vm.ip += 1
+            self.vm.fc_create_label(args[0])
         elif submode == 2:
-            if args[1] not in self.vm.labels:
-                print("Error: label does not exist!")
-                return
-
-            jump = (args[0] == "FIZZ" and self.vm.stack[self.vm.sp] != 0 or
-                    args[0] == "BUZZ" and self.vm.stack[self.vm.sp] == 0 or
-                    args[0] == "FIZZBUZZ")
-            if jump:
-                self.vm.ip = self.vm.labels[args[1]]
-            else:
-                self.vm.ip += 1
+            if args[0] == "FIZZ":
+                self.vm.fc_jump_if_non_zero(args[1])
+            if args[0] == "BUZZ":
+                self.vm.fc_jump_if_zero(args[1])
+            if args[0] == "FIZZBUZZ":
+                self.vm.fc_jump()
 
         if submode == 3:
             return 0
@@ -314,7 +343,8 @@ class FizzBuzzLang:
 
         while True:
             if self.vm.ip == len(code):
-                print("Error: Expected statement")
+                raise FBRuntimeError(
+                    "Unexpected end of program before FIZZBUZZ FIZZBUZZ")
                 break
 
             mode, submode, args = self._parse_tokens(
