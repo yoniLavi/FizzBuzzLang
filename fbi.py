@@ -129,6 +129,53 @@ class VM:
         elif stored_location_id == 2:
             self.sp = self.stored_sp2
 
+    def io_print_value(self, stored_location_id=0):
+        """Print the value at the current pointer position or storage location
+        """
+        value = [self.stack[self.sp],
+                 self.stack[self.stored_sp1],
+                 self.stack[self.stored_sp2],
+        ][stored_location_id]
+        print(value)
+
+    def io_print_character(self, stored_location_id=0):
+        """Print the current pointer position or storage location as character
+        """
+        value = [self.stack[self.sp],
+                 self.stack[self.stored_sp1],
+                 self.stack[self.stored_sp2],
+        ][stored_location_id]
+        print(chr(value), end="")
+
+    def io_character_input(self):
+        """Read either an integer or a character from Standard Input
+
+        The provided input is stored in the current pointer position.
+
+        The decimal representation of the character will be stored.
+        If more than one character or a floating point number is provided,
+        then 0 will be stored in the current data-space pointer location.
+
+        TODO: Refactor this method once there's a suitable test case(s)
+        """
+        user_input = input("> ")
+        try:
+            val = int(user_input)
+        except ValueError:
+            try:
+                val = float(user_input)
+                val = 0
+            except ValueError:
+                val = str(user_input)
+                val = ord(val) if len(user_input) == 1 else 0
+        self.stack[self.sp] = val
+
+    def io_store_binary(self, binary_input):
+        """Store a binary value in the current pointer position.
+        """
+        self.stack[self.sp] = int(binary_input, 2)
+
+
 class FizzBuzzLang:
     """
     The main class. All methods are private except for run_file
@@ -210,34 +257,30 @@ class FizzBuzzLang:
     def _op_io(self, submode, args):
         """Execute an Input/Output operation
         """
-        stored_loc = self.vm.sp
-        locargs = len(args) > 1
-        if locargs:
-            if args[1] == "FIZZ":
-                stored_loc = self.vm.stored_sp1
-            else:
-                stored_loc = self.vm.stored_sp2
         if submode == 1:
-            print(self.vm.stack[stored_loc])
-        elif submode == 2:
-            print(chr(self.vm.stack[stored_loc]), end="")
-        elif submode == 3:
-            if locargs and args[0] == "FIZZBUZZ":
-                varnum = "".join("0" if fb == "FIZZ" else "1"
-                                 for fb in args[1:])
-                self.vm.stack[self.vm.sp] = int(varnum, 2)
+            if len(args) > 1 and args[1] == "FIZZ":
+                self.vm.io_print_value(stored_location_id=1)
+            elif len(args) > 1 and args[1] == "BUZZ":
+                self.vm.io_print_value(stored_location_id=2)
             else:
-                user_input = input("> ")
-                try:
-                    val = int(user_input)
-                except ValueError:
-                    try:
-                        val = float(user_input)
-                        val = 0
-                    except ValueError:
-                        val = str(user_input)
-                        val = ord(val) if len(user_input) == 1 else 0
-                self.vm.stack[self.vm.sp] = val
+                self.vm.io_print_value()
+
+        elif submode == 2:
+            if len(args) > 1 and args[1] == "FIZZ":
+                self.vm.io_print_character(stored_location_id=1)
+            elif len(args) > 1 and args[1] == "BUZZ":
+                self.vm.io_print_character(stored_location_id=2)
+            else:
+                self.vm.io_print_character()
+
+        elif submode == 3:
+            if args[0] == "FIZZBUZZ" and len(args) > 1:
+                binary_input = "".join("0" if arg == "FIZZ" else "1"
+                                       for arg in args[1:])
+                self.vm.io_store_binary(binary_input)
+            else:
+                self.vm.io_character_input()
+
 
     def _op_flow(self, submode, args):
         """Execute a Flow Control operation
