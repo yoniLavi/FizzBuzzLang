@@ -59,17 +59,75 @@ class VM:
         """
         self.sp = max(self.sp - 1, 0)
 
-    def ds_duplicate_data_item(self):
+    def ds_duplicate_element(self):
         """Duplicate the pointed to stack element and move pointer forward
 
         If pointing to the top of the stack, it will be extended.
-        Otherwise, the next item will be overwritten.
+        Otherwise, the next element will be overwritten.
 
         TODO: Address the fact that this op is currently undocumented
         """
         self.ds_pointer_forward()
         self.stack[self.sp] = self.stack[self.sp-1]
 
+    def ds_add(self, stored_location_id=0):
+        """Perform addition at the current pointer position
+
+        The addend can be taken from one of two stored locations
+        designated by providing stored_location_id of 1 or 2.
+        Otherwise, the addend will be the fixed value 1.
+        """
+        addend = [1,
+                  self.stack[self.stored_sp1],
+                  self.stack[self.stored_sp2],
+        ][stored_location_id]
+        self.stack[self.sp] += addend
+
+    def ds_subtract(self, stored_location_id=0):
+        """Perform subtraction at the current pointer position
+
+        The subtrahend can be taken from one of two stored locations
+        designated by providing stored_location_id of 1 or 2.
+        Otherwise, the subtrahend will be the fixed value 1.
+        """
+        subtrahend = [1,
+                      self.stack[self.stored_sp1],
+                      self.stack[self.stored_sp2],
+        ][stored_location_id]
+        self.stack[self.sp] -= subtrahend
+
+    def ds_modulus(self, stored_location_id=0):
+        """Perform modulus operation at the current pointer position
+
+        This operation calculates the modulus of the value stored at the
+        current pointer position and the position immediately preceding it,
+        and stores the result in the position immediately following it.
+        If stored_location_id is provided, use that as the divisor position.
+
+        TODO: Discuss why the semantics for this op are different from others
+        """
+        self.ds_pointer_forward()
+        divisor = [self.stack[self.sp - 2],
+                   self.stack[self.stored_sp1],
+                   self.stack[self.stored_sp2],
+        ][stored_location_id]
+        self.stack[self.sp] = self.stack[self.sp - 1] % divisor
+
+    def ds_store(self, stored_location_id):
+        """Store the current pointer position in one of the stored locations
+        """
+        if stored_location_id == 1:
+            self.stored_sp1 = self.sp
+        elif stored_location_id == 2:
+            self.stored_sp2 = self.sp
+
+    def ds_jump_to(self, stored_location_id):
+        """Move pointer position to the value in one of the stored locations
+        """
+        if stored_location_id == 1:
+            self.sp = self.stored_sp1
+        elif stored_location_id == 2:
+            self.sp = self.stored_sp2
 
 class FizzBuzzLang:
     """
@@ -113,46 +171,41 @@ class FizzBuzzLang:
             elif args[0] == "BUZZ":
                 self.vm.ds_pointer_backward()
             elif args[0] == "FIZZBUZZ":
-                self.vm.ds_duplicate_data_item()
+                self.vm.ds_duplicate_element()
 
         elif submode == 2:
-            locargs = len(args) > 1
-            if locargs:
-                if args[1] == "FIZZ":
-                    stored_loc = self.vm.stored_sp1
-                else:
-                    stored_loc = self.vm.stored_sp2
-
             if args[0] == "FIZZ":
-                if locargs:
-                    self.vm.stack[self.vm.sp] += self.vm.stack[stored_loc]
+                if len(args) > 1 and args[1] == "FIZZ":
+                    self.vm.ds_add(stored_location_id=1)
+                elif len(args) > 1 and args[1] == "BUZZ":
+                    self.vm.ds_add(stored_location_id=2)
                 else:
-                    self.vm.stack[self.vm.sp] += 1
+                    self.vm.ds_add()
             elif args[0] == "BUZZ":
-                if locargs:
-                    self.vm.stack[self.vm.sp] -= self.vm.stack[stored_loc]
+                if len(args) > 1 and args[1] == "FIZZ":
+                    self.vm.ds_subtract(stored_location_id=1)
+                elif len(args) > 1 and args[1] == "BUZZ":
+                    self.vm.ds_subtract(stored_location_id=2)
                 else:
-                    self.vm.stack[self.vm.sp] -= 1
+                    self.vm.ds_subtract()
             elif args[0] == "FIZZBUZZ":
-                if self.vm.sp + 1 == len(self.vm.stack):
-                    self.vm.stack.append(0)
-                if locargs:
-                    divisor = self.vm.stack[stored_loc]
+                if len(args) > 1 and args[1] == "FIZZ":
+                    self.vm.ds_modulus(stored_location_id=1)
+                elif len(args) > 1 and args[1] == "BUZZ":
+                    self.vm.ds_modulus(stored_location_id=2)
                 else:
-                    divisor = self.vm.stack[self.vm.sp - 1]
-                self.vm.stack[self.vm.sp + 1] = self.vm.stack[self.vm.sp] % divisor
-                self.vm.sp += 1
+                    self.vm.ds_modulus()
 
         elif submode == 3:
             if args[0] == "FIZZ":
-                self.vm.stored_sp1 = self.vm.sp
+                self.vm.ds_store(stored_location_id=1)
             elif args[0] == "BUZZ":
-                self.vm.stored_sp2 = self.vm.sp
+                self.vm.ds_store(stored_location_id=2)
             elif args[0] == "FIZZBUZZ":
                 if args[1] == "FIZZ":
-                    self.vm.sp = self.vm.stored_sp1
+                    self.vm.ds_jump_to(stored_location_id=1)
                 else:
-                    self.vm.sp = self.vm.stored_sp2
+                    self.vm.ds_jump_to(stored_location_id=2)
 
     def _op_io(self, submode, args):
         """Execute an Input/Output operation
