@@ -37,7 +37,7 @@ class VM:
     - Flow control (methods statring with fc_)
     """
 
-    def __init__(self, *, debug=False):
+    def __init__(self):
         self.stack = [0]  # Memory stack
         self.sp = 0  # Data-space pointer
         # TODO: replace stored_sp1 and stored_sp2 with a fixed-length list
@@ -45,7 +45,6 @@ class VM:
         self.stored_sp2 = 0  # Stored location 2
         self.ip = 0  # Instruction pointer
         self.labels = {}  # Instruction pointer labels
-        self.debug = debug  # Debug mode enabled?
 
     def ds_pointer_forward(self):
         """Move the pointer one step forwards in the data-space
@@ -55,6 +54,7 @@ class VM:
         self.sp += 1
         if self.sp == len(self.stack):
             self.stack.append(0)
+        self.ip += 1
 
     def ds_pointer_backward(self):
         """Move the pointer one step backwards in the data-space
@@ -62,6 +62,7 @@ class VM:
         If already at the start, stay in place.
         """
         self.sp = max(self.sp - 1, 0)
+        self.ip += 1
 
     def ds_duplicate_element(self):
         """Duplicate the pointed to stack element and move pointer forward
@@ -73,6 +74,7 @@ class VM:
         """
         self.ds_pointer_forward()
         self.stack[self.sp] = self.stack[self.sp-1]
+        self.ip += 1
 
     def ds_add(self, stored_location_id=0):
         """Perform addition at the current pointer position
@@ -86,6 +88,7 @@ class VM:
                   self.stack[self.stored_sp2],
                   ][stored_location_id]
         self.stack[self.sp] += addend
+        self.ip += 1
 
     def ds_subtract(self, stored_location_id=0):
         """Perform subtraction at the current pointer position
@@ -99,6 +102,7 @@ class VM:
                       self.stack[self.stored_sp2],
                       ][stored_location_id]
         self.stack[self.sp] -= subtrahend
+        self.ip += 1
 
     def ds_modulus(self, stored_location_id=0):
         """Perform modulus operation at the current pointer position
@@ -116,6 +120,7 @@ class VM:
                    self.stack[self.stored_sp2],
                    ][stored_location_id]
         self.stack[self.sp] = self.stack[self.sp - 1] % divisor
+        self.ip += 1
 
     def ds_store(self, stored_location_id):
         """Store the current pointer position in one of the stored locations
@@ -124,6 +129,7 @@ class VM:
             self.stored_sp1 = self.sp
         elif stored_location_id == 2:
             self.stored_sp2 = self.sp
+        self.ip += 1
 
     def ds_move_to(self, stored_location_id):
         """Move data-space pointer to the value in one of the stored locations
@@ -132,6 +138,7 @@ class VM:
             self.sp = self.stored_sp1
         elif stored_location_id == 2:
             self.sp = self.stored_sp2
+        self.ip += 1
 
     def io_print_value(self, stored_location_id=0):
         """Print the value at the current pointer position or storage location
@@ -141,6 +148,7 @@ class VM:
                  self.stack[self.stored_sp2],
                  ][stored_location_id]
         print(value)
+        self.ip += 1
 
     def io_print_character(self, stored_location_id=0):
         """Print the current pointer position or storage location as character
@@ -150,6 +158,7 @@ class VM:
                  self.stack[self.stored_sp2],
                  ][stored_location_id]
         print(chr(value), end="")
+        self.ip += 1
 
     def io_character_input(self):
         """Read either an integer or a character from Standard Input
@@ -173,11 +182,13 @@ class VM:
                 val = str(user_input)
                 val = ord(val) if len(user_input) == 1 else 0
         self.stack[self.sp] = val
+        self.ip += 1
 
     def io_store_binary(self, binary_input):
         """Store a binary value in the current pointer position.
         """
         self.stack[self.sp] = int(binary_input, 2)
+        self.ip += 1
 
     def fc_create_label(self, label):
         """Create a label at the current instruction
@@ -218,15 +229,17 @@ class Interpreter:
     """
 
     def __init__(self, *, debug=False):
-        self.vm = VM(debug=debug)
+        self.vm = VM()
+        self.debug = debug  # When enabled debug mode provides verbose logging
 
-    def _parse_tokens(self, line, file, linenum):
-        """Parse a single line into tokens
+    def _run_line(self, line, file, linenum):
+        """Parse a single line into tokens and execute the operation
 
         The only permitted non-code lines are "//" comments and whitespace
         """
         if line.strip().startswith("//") or not line.strip():
-            return 0, 0, []
+            self.vm.ip += 1
+            return
 
         tokens = line.split()
 
@@ -244,95 +257,80 @@ class Interpreter:
             if not is_label and arg not in ("FIZZ", "BUZZ", "FIZZBUZZ"):
                 raise FBSyntaxError(line, file, linenum, arg, "argument")
 
-        return mode, submode, args
+        # Data-space manipulation operations:
+        if tokens == ["FIZZ", "FIZZ", "FIZZ"]:
+            self.vm.ds_pointer_forward()
+        if tokens == ["FIZZ", "FIZZ", "BUZZ"]:
+            self.vm.ds_pointer_backward()
+        if tokens == ["FIZZ", "FIZZ", "FIZZBUZZ"]:
+            self.vm.ds_duplicate_element()
 
-    def _op_stack(self, submode, args):
-        """Execute a Data-space manipulation operation
-        """
-        if submode == 1:
-            if args[0] == "FIZZ":
-                self.vm.ds_pointer_forward()
-            elif args[0] == "BUZZ":
-                self.vm.ds_pointer_backward()
-            elif args[0] == "FIZZBUZZ":
-                self.vm.ds_duplicate_element()
+        if tokens == ["FIZZ", "BUZZ", "FIZZ"]:
+            self.vm.ds_add()
+        if tokens == ["FIZZ", "BUZZ", "FIZZ", "FIZZ"]:
+            self.vm.ds_add(stored_location_id=1)
+        if tokens == ["FIZZ", "BUZZ", "FIZZ", "BUZZ"]:
+            self.vm.ds_add(stored_location_id=2)
 
-        elif submode == 2:
-            if args[0] == "FIZZ":
-                if len(args) > 1 and args[1] == "FIZZ":
-                    self.vm.ds_add(stored_location_id=1)
-                elif len(args) > 1 and args[1] == "BUZZ":
-                    self.vm.ds_add(stored_location_id=2)
-                else:
-                    self.vm.ds_add()
-            elif args[0] == "BUZZ":
-                if len(args) > 1 and args[1] == "FIZZ":
-                    self.vm.ds_subtract(stored_location_id=1)
-                elif len(args) > 1 and args[1] == "BUZZ":
-                    self.vm.ds_subtract(stored_location_id=2)
-                else:
-                    self.vm.ds_subtract()
-            elif args[0] == "FIZZBUZZ":
-                if len(args) > 1 and args[1] == "FIZZ":
-                    self.vm.ds_modulus(stored_location_id=1)
-                elif len(args) > 1 and args[1] == "BUZZ":
-                    self.vm.ds_modulus(stored_location_id=2)
-                else:
-                    self.vm.ds_modulus()
+        if tokens == ["FIZZ", "BUZZ", "BUZZ"]:
+            self.vm.ds_subtract()
+        if tokens == ["FIZZ", "BUZZ", "BUZZ", "FIZZ"]:
+            self.vm.ds_subtract(stored_location_id=1)
+        if tokens == ["FIZZ", "BUZZ", "BUZZ", "BUZZ"]:
+            self.vm.ds_subtract(stored_location_id=2)
 
-        elif submode == 3:
-            if args[0] == "FIZZ":
-                self.vm.ds_store(stored_location_id=1)
-            elif args[0] == "BUZZ":
-                self.vm.ds_store(stored_location_id=2)
-            elif args[0] == "FIZZBUZZ":
-                if args[1] == "FIZZ":
-                    self.vm.ds_move_to(stored_location_id=1)
-                else:
-                    self.vm.ds_move_to(stored_location_id=2)
+        if tokens == ["FIZZ", "BUZZ", "FIZZBUZZ"]:
+            self.vm.ds_modulus()
+        if tokens == ["FIZZ", "BUZZ", "FIZZBUZZ", "FIZZ"]:
+            self.vm.ds_modulus(stored_location_id=1)
+        if tokens == ["FIZZ", "BUZZ", "FIZZBUZZ", "BUZZ"]:
+            self.vm.ds_modulus(stored_location_id=2)
 
-    def _op_io(self, submode, args):
-        """Execute an Input/Output operation
-        """
-        if submode == 1:
-            if len(args) > 1 and args[1] == "FIZZ":
-                self.vm.io_print_value(stored_location_id=1)
-            elif len(args) > 1 and args[1] == "BUZZ":
-                self.vm.io_print_value(stored_location_id=2)
-            else:
-                self.vm.io_print_value()
+        if tokens == ["FIZZ", "FIZZBUZZ", "FIZZ"]:
+            self.vm.ds_store(stored_location_id=1)
+        if tokens == ["FIZZ", "FIZZBUZZ", "BUZZ"]:
+            self.vm.ds_store(stored_location_id=2)
 
-        elif submode == 2:
-            if len(args) > 1 and args[1] == "FIZZ":
-                self.vm.io_print_character(stored_location_id=1)
-            elif len(args) > 1 and args[1] == "BUZZ":
-                self.vm.io_print_character(stored_location_id=2)
-            else:
-                self.vm.io_print_character()
+        if tokens == ["FIZZ", "FIZZBUZZ", "FIZZBUZZ", "FIZZ"]:
+            self.vm.ds_move_to(stored_location_id=1)
+        if tokens == ["FIZZ", "FIZZBUZZ", "FIZZBUZZ", "BUZZ"]:
+            self.vm.ds_move_to(stored_location_id=2)
 
-        elif submode == 3:
-            if args[0] == "FIZZBUZZ" and len(args) > 1:
-                binary_input = "".join("0" if arg == "FIZZ" else "1"
-                                       for arg in args[1:])
-                self.vm.io_store_binary(binary_input)
-            else:
-                self.vm.io_character_input()
+        # Input/Output operations
+        if tokens == ["BUZZ", "FIZZ"]:
+            self.vm.io_print_value()
+        if tokens == ["BUZZ", "FIZZ", "FIZZ"]:
+            self.vm.io_print_value(stored_location_id=1)
+        if tokens == ["BUZZ", "FIZZ", "BUZZ"]:
+            self.vm.io_print_value(stored_location_id=2)
 
-    def _op_flow(self, submode, args):
-        """Execute a Flow Control operation
-        """
-        if submode == 1:
+        if tokens == ["BUZZ", "BUZZ"]:
+            self.vm.io_print_character()
+        if tokens == ["BUZZ", "BUZZ", "FIZZ"]:
+            self.vm.io_print_character(stored_location_id=1)
+        if tokens == ["BUZZ", "BUZZ", "BUZZ"]:
+            self.vm.io_print_character(stored_location_id=2)
+
+        if tokens == ["BUZZ", "FIZZBUZZ"]:
+            self.vm.io_character_input()
+        if tokens[:2] == ["BUZZ", "FIZZBUZZ"] and len(tokens) > 2:
+            binary_input = "".join("0" if arg == "FIZZ" else "1"
+                                   for arg in args[1:])
+            self.vm.io_store_binary(binary_input)
+
+        # Flow Control operations
+        if tokens[:2] == ["FIZZBUZZ", "FIZZ"] and len(tokens) == 3:
             self.vm.fc_create_label(args[0])
-        elif submode == 2:
-            if args[0] == "FIZZ":
-                self.vm.fc_jump_if_non_zero(args[1])
-            if args[0] == "BUZZ":
-                self.vm.fc_jump_if_zero(args[1])
-            if args[0] == "FIZZBUZZ":
-                self.vm.fc_jump()
 
-        if submode == 3:
-            return 0
+        if tokens[:3] == ["FIZZBUZZ", "BUZZ", "FIZZ"] and len(tokens) == 4:
+            self.vm.fc_jump_if_non_zero(args[1])
+        if tokens[:3] == ["FIZZBUZZ", "BUZZ", "BUZZ"] and len(tokens) == 4:
+            self.vm.fc_jump_if_zero(args[1])
+        if tokens[:3] == ["FIZZBUZZ", "BUZZ", "FIZZBUZZ"] and len(tokens) == 4:
+            self.vm.fc_jump()
+
+        if tokens == ["FIZZBUZZ", "FIZZBUZZ"]:
+            self.vm.ip = -1
 
     def run_file(self, filename):
         """Parse the FizzBuzzLang script and attempt to execute it
@@ -342,27 +340,20 @@ class Interpreter:
             code = prog.readlines()
 
         while True:
+            if self.vm.ip == -1:  # intentional exit
+                break
             if self.vm.ip == len(code):
                 raise FBRuntimeError(
                     "Unexpected end of program before FIZZBUZZ FIZZBUZZ")
                 break
 
-            mode, submode, args = self._parse_tokens(
-                code[self.vm.ip], filename, self.vm.ip)
-            if mode == 1:
-                self._op_stack(submode, args)
-                self.vm.ip += 1
-            elif mode == 2:
-                self._op_io(submode, args)
-                self.vm.ip += 1
-            elif mode == 3:
-                bv = self._op_flow(submode, args)
-                if bv == 0:
-                    break
-            else:
-                self.vm.ip += 1
 
-            if self.vm.debug:
-                print(self.vm.labels, self.vm.stored_sp1, self.vm.stored_sp2)
-                print(mode, submode, args)
-                print(self.vm.stack, self.vm.sp, self.vm.ip)
+            self._run_line(code[self.vm.ip], filename, self.vm.ip)
+
+
+            if self.debug:
+                print(f"Interpreting line {self.vm.ip}: '{code[self.vm.ip]}'")
+                print(f"Labels: {self.vm.labels}")
+                print(f"Stored locations: sp1={self.vm.stored_sp1} "
+                      f"sp2={self.vm.stored_sp2}")
+                print(f"Stack position=self.vm.sp, stack:{self.vm.stack}")
